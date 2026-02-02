@@ -1,0 +1,61 @@
+name: DeepSeek Code Security Scan
+
+# 触发条件：当推送到 main 分支，或者有 Pull Request 时触发
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+  # 允许在 GitHub 网页上手动点击运行
+  workflow_dispatch:
+
+jobs:
+  security-scan:
+    runs-on: ubuntu-latest
+
+    # 权限设置：允许读取代码，允许上传 Security Events (如果有)
+    permissions:
+      contents: read
+      security-events: write
+
+    steps:
+      # 1. 拉取仓库代码
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      # 2. 设置 Python 环境
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.10"
+
+      # 3. 安装依赖
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+
+      # 4. 运行你的扫描器 (关键步骤)
+      - name: Run DeepSeek Scanner
+        env:
+          # 从 GitHub Secrets 中获取 API Key，不要写死！
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+        run: |
+          # 确保 scripts 目录在 PYTHONPATH 中，或者直接运行脚本
+          # 我们这里扫描 vulnerable_code 目录
+          python scripts/llm_security_scanner.py --target ./vulnerable_code --recursive --output report.md
+
+      # 5. 上传扫描报告作为 Artifact (构件)
+      # 这样你可以在 GitHub 页面上下载查看生成的 report.md
+      - name: Upload Scan Report
+        uses: actions/upload-artifact@v3
+        with:
+          name: security-report
+          path: report.md
+
+      # 6. (进阶) 直接在 Job 摘要中显示报告内容
+      - name: Publish Report to Job Summary
+        if: always() # 即使上面报错也运行
+        run: |
+          echo "## 🛡️ DeepSeek Security Report" >> $GITHUB_STEP_SUMMARY
+          cat report.md >> $GITHUB_STEP_SUMMARY
